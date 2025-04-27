@@ -1,0 +1,10 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- 联系人图标（消息气泡+人物剪影） -->
+    <path
+        android:fillColor="#FFFFFF"
+    android:pathData="M20,2H4C2.9,2 2,2.9 2,4V22L6,18H20C21.1,18 22,17.1 22,16V4C22,2.9 21.1,2 20,2ZM19,14H5L4,15V5H19V14ZM12,11C13.66,11 15,9.66 15,8C15,6.34 13.66,5 12,5C10.34,5 9,6.34 9,8C9,9.66 10.34,11 12,11Z"/>
+</vector>

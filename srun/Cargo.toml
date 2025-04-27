@@ -1,0 +1,51 @@
+[package]
+name = "srun"
+version = "0.6.0"
+authors = ["zu1k <i@zu1k.com>"]
+edition = "2021"
+description = "Srun authentication system login tools"
+readme = "README.md"
+homepage = "https://github.com/zu1k/srun"
+repository = "https://github.com/zu1k/srun"
+license = "GPL-3.0"
+exclude = [".github/"]
+build = "build.rs"
+
+[lib]
+name = "campuslogin"
+crate-type = ["cdylib"]
+
+[profile.release]
+strip = true
+lto = true
+opt-level = "z"
+codegen-units = 1
+panic = "abort"
+
+
+[dependencies]
+base64 = "0.22"
+getopts = "0.2"
+hmac = "0.12"
+lazy_static = "1.4"
+md-5 = "0.10"
+quick-error = "2.0"
+reqwest = { version = "0.12", default-features = false, features = ["blocking"], optional = true }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha-1 = "0.10"
+ureq = { git = "https://github.com/zu1k/ureq.git", branch = "srun", default-features = false, optional = true }
+socket2 = "0.5"
+jni = { version = "0.21", features = ["default"] }
+
+[features]
+default = ["ureq"]
+tls = ["ureq-rust-tls"]
+
+# ureq
+ureq-rust-tls = ["ureq", "ureq/tls"]
+ureq-native-tls = ["ureq", "ureq/native-tls"]
+# reqwest
+reqwest-rust-tls = ["reqwest", "reqwest/rustls-tls"]
+reqwest-native-tls = ["reqwest", "reqwest/default-tls"]
+

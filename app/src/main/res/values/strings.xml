@@ -1,0 +1,29 @@
+<resources>
+    <string name="app_name">校园登录</string>
+    <string name="ctc">@ctc</string>
+    <string name="ynufe">@ynufe</string>
+    <string name="ip_address">IP: %s</string>
+    <string name="ip_unavailable">未获取</string>
+    <string name="display_ctc">宿舍区域</string>
+    <string name="display_ynufe">教学区域</string>
+    <string name="not_history">暂无历史记录</string>
+    <string name="clean_history">清除历史记录</string>
+    <string name="login">登录</string>
+    <string name="Heartbeat">断线重连</string>
+    <string name="log">日志信息</string>
+    <string name="clean_log">清除日志信息</string>
+    <string name="edit_Information">编辑信息</string>
+    <string name="name">学号</string>
+    <string name="password">密码</string>
+    <string name="Operators">选择运营商</string>
+    <string name="save_success">保存成功</string>
+    <string name="save_failure">保存失败</string>
+    <string name="update_success">更新成功</string>
+    <string name="update_failure">更新失败</string>
+    <string name="delete_success">删除成功</string>
+    <string name="delete_failure">删除失败</string>
+    <string name="clear_success">清除成功</string>
+    <string name="clear_failure">清除失败</string>
+    <string name="contact_me">联系我</string>
+    <string name="contact_info">GitHub：https://github.com/WeiTool/\n邮箱：475288481@qq.com</string>
+</resources>

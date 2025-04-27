@@ -1,0 +1,13 @@
+<resources>
+    <!-- 基础主题 -->
+    <style name="Theme.CampusLogin" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <!-- 状态栏背景颜色 -->
+        <item name="android:statusBarColor">@android:color/white</item>
+
+        <!-- 状态栏图标颜色（深色模式：白色背景配黑色图标） -->
+        <item name="android:windowLightStatusBar">true</item>
+        <!-- 设置标题栏背景颜色 -->
+        <item name="colorPrimary">@color/history_back</item>
+        <item name="colorPrimaryVariant">@color/blue_dark</item>
+    </style>
+</resources>

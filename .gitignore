@@ -1,0 +1,123 @@
+# --- 操作系统生成文件 ---
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs*.db
+[Dd]esktop.ini
+
+# Linux
+*~
+.fuse_hidden*
+
+
+# --- 开发工具/IDE ---
+# JetBrains (IntelliJ, WebStorm等)
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+
+# VS Code
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# Sublime Text
+*.sublime-workspace
+
+
+# --- 编程语言通用 ---
+# 编译文件
+*.class
+*.exe
+*.dll
+*.so
+*.pyc
+__pycache__/
+*.egg-info/
+
+# 日志文件
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 依赖目录
+node_modules/
+vendor/
+jspm_packages/
+bower_components/
+
+
+# --- 特定语言扩展 ---
+# Python
+*.py[cod]
+env/
+venv/
+.python-version
+
+# Java
+target/
+.gradle/
+build/
+
+# JavaScript
+/dist/
+/yarn.lock
+/package-lock.json
+
+# Ruby
+/.bundle
+*.gem
+/.config
+
+
+# --- 测试相关 ---
+coverage/
+*.lcov
+.junit.xml
+
+
+# --- 环境文件 ---
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+
+# --- 构建系统 ---
+dist/
+build/
+*.zip
+*.tar
+*.gz
+
+
+# --- 文档生成 ---
+_site/
+.sass-cache/
+
+
+# --- 数据库文件 ---
+*.db
+*.sqlite
+*.dump
+
+
+# --- 其他 ---
+# 临时文件
+*.swp
+*.swo
+*.bak
+*.tmp
+
+# 调试文件
+*.stackdump
