@@ -1,11 +1,17 @@
 package com.srun.campuslogin.ui;
 
+import android.os.Build;
 import android.os.Bundle;
+import android.view.View;
+import android.view.ViewGroup;
 import android.widget.Toast;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 
 import com.srun.campuslogin.R;
 import com.srun.campuslogin.databinding.ActivityHistoryBinding;
@@ -36,6 +42,17 @@ public class HistoryActivity extends AppCompatActivity {
         //===========================视图初始化模块=============================
         binding = ActivityHistoryBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
+
+        // 添加 Android 15 及以上版本的顶部边距适配
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            ViewCompat.setOnApplyWindowInsetsListener(binding.rvHistory, (v, insets) -> {
+                int statusBarHeight = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top;
+                ViewGroup.MarginLayoutParams params = (ViewGroup.MarginLayoutParams) v.getLayoutParams();
+                params.topMargin = statusBarHeight + 16; // 状态栏高度 + 额外间距
+                v.setLayoutParams(params);
+                return insets;
+            });
+        }
 
         //===========================核心组件初始化模块=============================
         // 先初始化 RecyclerView 和 Adapter
@@ -73,6 +90,22 @@ public class HistoryActivity extends AppCompatActivity {
                 Toast.makeText(this, getString(resId), Toast.LENGTH_SHORT).show();
             }
         });
+
+        viewModel.getAllCards().observe(this, cards -> {
+            adapter.submitList(cards, () -> {
+                // 强制刷新所有可见项
+                binding.rvHistory.post(() -> {
+                    RecyclerView.LayoutManager lm = binding.rvHistory.getLayoutManager();
+                    if (lm != null) {
+                        for (int i = 0; i < lm.getChildCount(); i++) {
+                            View view = lm.getChildAt(i);
+                            int pos = lm.getPosition(view);
+                            adapter.notifyItemChanged(pos);
+                        }
+                    }
+                });
+            });
+        });
     }
 
     //===========================列表视图初始化模块=============================
@@ -100,9 +133,12 @@ public class HistoryActivity extends AppCompatActivity {
      */
     private void setupButtonListeners() {
         // 添加新卡片按钮
-        binding.fabAdd.setOnClickListener(v ->
-                new EditCardDialogFragment().show(getSupportFragmentManager(), "dialog")
-        );
+        binding.fabAdd.setOnClickListener(v -> {
+            // 检查是否已有对话框存在
+            if (getSupportFragmentManager().findFragmentByTag("dialog") == null) {
+                new EditCardDialogFragment().show(getSupportFragmentManager(), "dialog");
+            }
+        });
 
         // 清除全局缓存按钮
         binding.btnClearCache.setOnClickListener(v ->

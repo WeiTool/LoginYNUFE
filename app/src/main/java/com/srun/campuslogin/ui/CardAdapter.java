@@ -116,13 +116,13 @@ public class CardAdapter extends ListAdapter<CardEntity, CardAdapter.ViewHolder>
             // 心跳按钮事件
             binding.btnHeartbeat.setOnClickListener(v -> {
                 int position = getBindingAdapterPosition();
-                RecyclerView.Adapter<?> adapter = getBindingAdapter();
-                if (position != RecyclerView.NO_POSITION && adapter instanceof CardAdapter) {
-                    CardEntity card = ((CardAdapter) adapter).getItem(position);
-                    // 使用 Setter 修改状态
-                    boolean newState = !card.isHeartbeatActive();
-                    card.setHeartbeatActive(newState);
-                    ((CardAdapter) adapter).toggleHeartbeatState(card, position);
+                if (position != RecyclerView.NO_POSITION) {
+                    // 获取当前适配器实例
+                    RecyclerView.Adapter<?> adapter = getBindingAdapter();
+                    if (adapter instanceof CardAdapter) {
+                        CardEntity card = ((CardAdapter) adapter).getItem(position);
+                        ((CardAdapter) adapter).toggleHeartbeatState(card, position);
+                    }
                 }
             });
 
@@ -219,7 +219,15 @@ public class CardAdapter extends ListAdapter<CardEntity, CardAdapter.ViewHolder>
         updateLoginButtonState(holder);
 
         // 心跳按钮状态（颜色/文本）
-        updateHeartbeatButton(holder);
+        holder.binding.btnHeartbeat.setText(
+                card.isHeartbeatActive() ? "停止检测" : "断线重连"
+        );
+        holder.binding.btnHeartbeat.setBackgroundTintList(
+                ColorStateList.valueOf(ContextCompat.getColor(
+                        holder.itemView.getContext(),
+                        card.isHeartbeatActive() ? R.color.red : R.color.blue
+                ))
+        );
     }
 
     // 新增Payload局部刷新逻辑
@@ -231,18 +239,23 @@ public class CardAdapter extends ListAdapter<CardEntity, CardAdapter.ViewHolder>
             for (Object payload : payloads) {
                 if (payload instanceof Bundle) {
                     Bundle bundle = (Bundle) payload;
+                    // 处理 STUDENT_ID_CHANGED
                     if (bundle.containsKey("STUDENT_ID_CHANGED")) {
                         holder.binding.tvStudentId.setText(bundle.getString("STUDENT_ID_CHANGED"));
                     }
+                    // 处理 OPERATOR_CHANGED
                     if (bundle.containsKey("OPERATOR_CHANGED")) {
                         String operator = bundle.getString("OPERATOR_CHANGED");
                         holder.binding.tvOperator.setText(getOperatorDisplayName(operator));
                     }
+                    // 处理 IP_CHANGED
                     if (bundle.containsKey("IP_CHANGED")) {
                         holder.bindIp(bundle.getString("IP_CHANGED"));
                     }
+                    // 处理 HEARTBEAT_CHANGED
                     if (bundle.containsKey("HEARTBEAT_CHANGED")) {
-                        holder.bindHeartbeat(bundle.getBoolean("HEARTBEAT_CHANGED"));
+                        boolean isActive = bundle.getBoolean("HEARTBEAT_CHANGED");
+                        holder.bindHeartbeat(isActive);
                     }
                 }
             }
@@ -275,8 +288,39 @@ public class CardAdapter extends ListAdapter<CardEntity, CardAdapter.ViewHolder>
     //===========================心跳功能处理=============================
     private void toggleHeartbeatState(CardEntity card, int position) {
         boolean newState = !card.isHeartbeatActive();
-        card.setHeartbeatActive(newState);
-        // 状态切换逻辑已在 ViewHolder 中处理
+        card.setHeartbeatActive(newState); // 直接修改当前列表对象状态
+
+        // 强制更新数据库（同步操作）
+        App.getDbExecutor().execute(() -> {
+            try {
+                // 创建新对象避免数据污染
+                CardEntity newCard = new CardEntity();
+                newCard.setId(card.getId());
+                newCard.setHeartbeatActive(newState);
+                newCard.setLastIp(card.getLastIp());
+                newCard.setStudentId(card.getStudentId());
+                newCard.setOperator(card.getOperator());
+                newCard.setPassword(card.getPassword());
+                newCard.setLogs(card.getLogs());
+                newCard.setHeartbeatCounterValue(card.getHeartbeatCounterValue());
+
+                // 直接更新数据库
+                AppDatabase.getDatabase(contextRef.get()).cardDao().updateCard(newCard);
+
+                // 主线程更新UI（关键修复：强制触发完整刷新）
+                new Handler(Looper.getMainLooper()).post(() -> {
+                    notifyItemChanged(position); // 移除手动Payload，强制完整刷新
+                });
+
+            } catch (Exception e) {
+                Log.e("Heartbeat", "数据库更新失败: " + e.getMessage());
+                new Handler(Looper.getMainLooper()).post(() ->
+                        showToast("状态更新失败")
+                );
+            }
+        });
+
+        // 日志和心跳控制
         if (newState) {
             card.addLog("开启断线重连 - " + DateUtils.getCurrentTime());
             showToast("开启断线检测");
@@ -286,8 +330,6 @@ public class CardAdapter extends ListAdapter<CardEntity, CardAdapter.ViewHolder>
             showToast("关闭断线重连");
             stopHeartbeatCheck(card.getId());
         }
-        executeDatabaseUpdate(card);
-        notifyItemChanged(position);
     }
 
     private void startHeartbeatCheck(CardEntity card) {
@@ -393,10 +435,20 @@ public class CardAdapter extends ListAdapter<CardEntity, CardAdapter.ViewHolder>
 
     //===========================辅助方法模块=============================
     private boolean validateCardInfo(CardEntity card) {
-        if (card.getUsername() == null || card.getOperator() == null || card.getPassword() == null) {
+        // 检查所有关键字段是否为 null 或空字符串
+        if (TextUtils.isEmpty(card.getUsername()) ||
+                TextUtils.isEmpty(card.getOperator()) ||
+                TextUtils.isEmpty(card.getPassword())) {
             showToast("账号信息不完整");
             return false;
         }
+
+        // 检查学号是否为纯数字（可选）
+        if (!card.getUsername().matches("\\d+")) {
+            showToast("学号必须为纯数字");
+            return false;
+        }
+
         return true;
     }
 
@@ -474,45 +526,6 @@ public class CardAdapter extends ListAdapter<CardEntity, CardAdapter.ViewHolder>
             );
         } catch (Resources.NotFoundException e) {
             Log.e("CardAdapter", "颜色资源未找到: " + e.getMessage());
-        }
-    }
-
-    private void updateHeartbeatButton(ViewHolder holder) {
-        // 获取当前项的位置，并检查有效性
-        int position = holder.getBindingAdapterPosition();
-        if (position == RecyclerView.NO_POSITION) {
-            return; // 无效位置直接返回
-        }
-
-        // 获取对应的卡片数据
-        CardEntity card = getItem(position);
-        if (card == null) {
-            Log.w("CardAdapter", "无效的卡片数据，位置：" + position);
-            return; // 防御性编程：数据为空时返回
-        }
-
-        // 获取上下文引用（弱引用防止内存泄漏）
-        Context context = contextRef.get();
-        if (context == null) {
-            Log.w("CardAdapter", "上下文不可用，无法更新心跳按钮");
-            return;
-        }
-
-        try {
-            // 根据心跳状态动态设置颜色和文本
-            int colorRes = card.isHeartbeatActive() ? R.color.red : R.color.blue;
-            String buttonText = card.isHeartbeatActive() ? "停止检测" : "断线重连";
-
-            // 设置按钮背景色
-            holder.binding.btnHeartbeat.setBackgroundTintList(
-                    ColorStateList.valueOf(ContextCompat.getColor(context, colorRes))
-            );
-
-            // 设置按钮文本
-            holder.binding.btnHeartbeat.setText(buttonText);
-
-        } catch (Resources.NotFoundException e) {
-            holder.binding.btnHeartbeat.setText("状态未知");
         }
     }
 
@@ -685,7 +698,10 @@ public class CardAdapter extends ListAdapter<CardEntity, CardAdapter.ViewHolder>
 
         Context context = contextRef.get();
         if (context instanceof AppCompatActivity) {
-            dialog.show(((AppCompatActivity) context).getSupportFragmentManager(), "dialog");
+            AppCompatActivity activity = (AppCompatActivity) context;
+            if (activity.getSupportFragmentManager().findFragmentByTag("dialog") == null) {
+                dialog.show(activity.getSupportFragmentManager(), "dialog");
+            }
         }
     }
 
