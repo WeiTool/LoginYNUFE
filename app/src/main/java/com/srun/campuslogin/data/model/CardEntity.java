@@ -100,9 +100,6 @@ public class CardEntity implements Parcelable {
         List<String> tempLogs = new ArrayList<>();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             in.readList(tempLogs, String.class.getClassLoader(), String.class);
-        } else {
-            //noinspection deprecation
-            in.readList(tempLogs, String.class.getClassLoader());
         }
         logs.addAll(tempLogs);
 

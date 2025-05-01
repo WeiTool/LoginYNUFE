@@ -97,9 +97,6 @@ public class EditCardDialogFragment extends DialogFragment {
         if (args != null) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 currentCard = args.getParcelable("card", CardEntity.class);
-            } else {
-                //noinspection deprecation
-                currentCard = args.getParcelable("card");
             }
         }
     }

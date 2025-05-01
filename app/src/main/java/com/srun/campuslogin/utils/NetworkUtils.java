@@ -2,7 +2,6 @@ package com.srun.campuslogin.utils;
 
 import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.Inet4Address;
@@ -31,24 +30,25 @@ public class NetworkUtils {
     public static ReauthResult isReauthenticationRequired() {
         HttpURLConnection connection = null;
         try {
+            HttpURLConnection.setFollowRedirects(false); // 全局禁用自动重定向
             URL url = new URL("http://connectivitycheck.gstatic.com/generate_204");
             connection = (HttpURLConnection) url.openConnection();
             connection.setRequestMethod("GET");
-            connection.setConnectTimeout(5000);  // 5秒连接超时
-            connection.setReadTimeout(5000);     // 5秒读取超时
-            connection.setInstanceFollowRedirects(false); // 禁止自动重定向
+            connection.setConnectTimeout(5000);
+            connection.setReadTimeout(5000);
+            connection.setInstanceFollowRedirects(false); // 双重确保
 
             int responseCode = connection.getResponseCode();
             String location = connection.getHeaderField("Location");
 
-            // 逻辑1：检查状态码
+            // 逻辑1：直接检查 302 或其他非 204 状态码
             if (responseCode != 204) {
                 return new ReauthResult(true, "响应码异常: " + responseCode);
             }
 
-            // 逻辑2：检查重定向头
-            if (location != null) {
-                return new ReauthResult(true, "检测到重定向至: " + location);
+            // 逻辑2：检查重定向头（即使状态码是 204）
+            if (location != null && location.contains("login")) {
+                return new ReauthResult(true, "检测到登录重定向: " + location);
             }
 
             // 逻辑3：检查响应内容
@@ -60,8 +60,7 @@ public class NetworkUtils {
                 while ((line = reader.readLine()) != null) {
                     content.append(line);
                 }
-                boolean needReauth = content.toString().contains("用户登录")
-                        || content.toString().contains("上网认证平台");
+                boolean needReauth = content.toString().matches(".*(用户登录|上网认证平台|portal|login).*");
                 return new ReauthResult(needReauth, null);
             }
 
