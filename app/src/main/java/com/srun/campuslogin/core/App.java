@@ -3,6 +3,8 @@ package com.srun.campuslogin.core;
 import android.app.Application;
 import androidx.room.Room;
 import com.srun.campuslogin.data.AppDatabase;
+import com.srun.campuslogin.utils.VersionChecker;
+
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -29,6 +31,7 @@ public class App extends Application {
         instance = this;
         initThreadPools();
         initDatabase();
+        VersionChecker.checkNewVersion(this);
     }
 
     @Override
