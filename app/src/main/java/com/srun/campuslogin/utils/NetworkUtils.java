@@ -31,7 +31,7 @@ public class NetworkUtils {
         HttpURLConnection connection = null;
         try {
             HttpURLConnection.setFollowRedirects(false); // 全局禁用自动重定向
-            URL url = new URL("http://connectivitycheck.gstatic.com/generate_204");
+            URL url = new URL("https://www.gstatic.com/generate_204");
             connection = (HttpURLConnection) url.openConnection();
             connection.setRequestMethod("GET");
             connection.setConnectTimeout(5000);

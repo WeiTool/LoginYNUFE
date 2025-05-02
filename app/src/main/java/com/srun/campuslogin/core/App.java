@@ -43,7 +43,7 @@ public class App extends Application {
     //===========================初始化方法=============================
     private void initThreadPools() {
         // 数据库线程池配置（IO密集型）
-        int dbCorePoolSize = Math.max(2, Runtime.getRuntime().availableProcessors() / 2);
+        int dbCorePoolSize = Math.max(2, (int) (Runtime.getRuntime().availableProcessors() * 0.4));
         dbExecutor = new ThreadPoolExecutor(
                 dbCorePoolSize,
                 dbCorePoolSize * 2,
@@ -87,10 +87,24 @@ public class App extends Application {
     //===========================资源释放方法=============================
     private void shutdownThreadPools() {
         if (dbExecutor != null) {
-            dbExecutor.shutdownNow();
+            dbExecutor.shutdown();
+            try {
+                if (!dbExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+                    dbExecutor.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                dbExecutor.shutdownNow();
+            }
         }
         if (networkExecutor != null) {
             networkExecutor.shutdownNow();
+            try{
+                if(!networkExecutor.awaitTermination(5,TimeUnit.SECONDS)){
+                    networkExecutor.shutdownNow();
+                }
+            }catch (InterruptedException e){
+                networkExecutor.shutdownNow();
+            }
         }
     }
 }

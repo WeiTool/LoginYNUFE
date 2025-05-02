@@ -4,22 +4,26 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
 
-//===========================日期时间工具类=============================
 /**
- * 功能：提供日期时间相关的工具方法
- * 包含时间格式化、当前时间获取等核心功能
+ * 日期时间工具类（线程安全优化版）
+ * 功能：提供高性能的日期格式化方法
  */
 public class DateUtils {
-    //===========================核心功能方法=============================
+    // 使用 ThreadLocal 避免多线程竞争
+    private static final ThreadLocal<SimpleDateFormat> THREAD_LOCAL_FORMATTER =
+            new ThreadLocal<>() {
+                @Override
+                protected SimpleDateFormat initialValue() {
+                    // 动态获取当前Locale
+                    return new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
+                }
+            };
+
     /**
-     * 功能：获取当前时间的格式化字符串
-     * 格式：yyyy-MM-dd HH:mm:ss
-     * 注意：使用同步锁保证线程安全，并动态获取当前Locale
-     * @return 格式化后的当前时间字符串
+     * 获取当前时间的格式化字符串（线程安全）
+     * @return 格式：yyyy-MM-dd HH:mm:ss
      */
-    public static synchronized String getCurrentTime() {
-        // 每次调用时动态获取当前Locale
-        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
-        return sdf.format(new Date());
+    public static String getCurrentTime() {
+        return THREAD_LOCAL_FORMATTER.get().format(new Date());
     }
 }

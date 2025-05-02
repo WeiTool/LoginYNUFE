@@ -32,12 +32,13 @@ import java.util.concurrent.TimeUnit;
 public class VersionChecker {
     private static final String TAG = "VersionChecker";
     private static final String GITEE_API_URL = "https://gitee.com/api/v5/repos/weitool/login-ynufe/releases";
+    private static final String TARGET_APK_NAME = "LoginYNUFE.apk"; // 目标APK文件名
 
     // 自定义数据结构
     private static class Release {
         String tag_name;
         String body;
-        List<Asset> assets = Collections.emptyList(); // 确保非空初始化
+        List<Asset> assets = Collections.emptyList();
     }
 
     private static class Asset {
@@ -55,7 +56,6 @@ public class VersionChecker {
                 Request request = new Request.Builder().url(GITEE_API_URL).build();
 
                 try (Response response = client.newCall(request).execute()) {
-                    // 处理空响应体
                     if (!response.isSuccessful() || response.body() == null) {
                         Log.e(TAG, "API请求失败或响应体为空");
                         return;
@@ -65,18 +65,24 @@ public class VersionChecker {
                     Type listType = new TypeToken<List<Release>>(){}.getType();
                     List<Release> releases = new Gson().fromJson(json, listType);
 
-                    // 空集合保护
                     if (releases == null || releases.isEmpty()) return;
-                    Release latest = releases.get(0);
-                    if (latest.assets == null || latest.assets.isEmpty()) return;
 
-                    // 安全获取版本号
-                    PackageInfo pInfo = context.getPackageManager().getPackageInfo(
-                            context.getPackageName(), PackageManager.GET_ACTIVITIES);
-                    String localVersion = pInfo.versionName != null ? pInfo.versionName : "0.0.0";
+                    // 遍历所有发行版（从最新到旧）
+                    for (Release release : releases) {
+                        if (release.assets == null || release.assets.isEmpty()) continue;
 
-                    if (isNewVersion(latest.tag_name, localVersion)) {
-                        showUpdateDialog(context, latest);
+                        // 查找匹配的APK文件
+                        String downloadUrl = findTargetApkUrl(release.assets);
+                        if (downloadUrl != null) {
+                            PackageInfo pInfo = context.getPackageManager().getPackageInfo(
+                                    context.getPackageName(), PackageManager.GET_ACTIVITIES);
+                            String localVersion = pInfo.versionName != null ? pInfo.versionName : "0.0.0";
+
+                            if (isNewVersion(release.tag_name, localVersion)) {
+                                showUpdateDialog(context, release, downloadUrl);
+                            }
+                            break; // 找到最新有效版本后终止循环
+                        }
                     }
                 }
             } catch (Exception e) {
@@ -85,6 +91,22 @@ public class VersionChecker {
         });
     }
 
+    /**
+     * 在assets中查找目标APK的下载链接
+     */
+    private static String findTargetApkUrl(List<Asset> assets) {
+        for (Asset asset : assets) {
+            if (asset.browser_download_url != null &&
+                    asset.browser_download_url.endsWith(TARGET_APK_NAME)) {
+                return asset.browser_download_url;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 版本比较逻辑
+     */
     private static boolean isNewVersion(String remote, @NonNull String local) {
         try {
             String cleanRemote = remote.replaceAll("[^\\d.]", "");
@@ -113,17 +135,15 @@ public class VersionChecker {
         }
     }
 
-    private static void showUpdateDialog(Context context, Release release) {
+    /**
+     * 显示更新对话框
+     */
+    private static void showUpdateDialog(Context context, Release release, String downloadUrl) {
         new Handler(Looper.getMainLooper()).post(() -> {
-            // 双重空检查
-            if (release.assets == null || release.assets.isEmpty()) return;
-
             AlertDialog dialog = new AlertDialog.Builder(context)
                     .setTitle("新版本 " + release.tag_name)
                     .setMessage(release.body != null ? release.body : "新功能优化")
-                    .setPositiveButton("下载", (d, w) ->
-                            startDownload(context, release.assets.get(0).browser_download_url)
-                    )
+                    .setPositiveButton("下载", (d, w) -> startDownload(context, downloadUrl))
                     .setNegativeButton("取消", null)
                     .create();
             dialog.show();
@@ -136,7 +156,7 @@ public class VersionChecker {
             DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url))
                     .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                     .setTitle("应用更新")
-                    .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "campus_login_update.apk");
+                    .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, TARGET_APK_NAME);
 
             DownloadManager dm = (DownloadManager) context.getSystemService(Context.DOWNLOAD_SERVICE);
             if (dm == null) {
@@ -163,7 +183,7 @@ public class VersionChecker {
                 }
             };
 
-            // 动态注册（全版本兼容方案）
+            // 动态注册（全版本兼容）
             IntentFilter filter = new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 context.registerReceiver(downloadReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
@@ -177,7 +197,6 @@ public class VersionChecker {
 
     private static void installApk(Context context, Uri apkUri) {
         try {
-            // Android 8.0+安装权限检查
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
                     !context.getPackageManager().canRequestPackageInstalls()) {
                 context.startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES)

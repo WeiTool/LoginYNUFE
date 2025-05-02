@@ -1,7 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
+    <!-- 允许校园网认证IP及必要域名使用明文 -->
     <domain-config cleartextTrafficPermitted="true">
+        <!-- 直接添加IP地址 -->
+        <domain includeSubdomains="false">172.16.130.31</domain>
         <domain includeSubdomains="true">connectivitycheck.gstatic.com</domain>
         <domain includeSubdomains="true">gitee.com</domain>
     </domain-config>
+
+    <!-- 全局默认禁用明文通信 -->
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
 </network-security-config>

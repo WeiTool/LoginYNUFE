@@ -9,6 +9,9 @@ import androidx.room.Entity;
 import androidx.room.Ignore;
 import androidx.room.PrimaryKey;
 import androidx.room.TypeConverters;
+
+import com.srun.campuslogin.core.App;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -233,7 +236,10 @@ public class CardEntity implements Parcelable {
      * 将内存中的计数器值同步到数据库字段
      */
     public void syncHeartbeatCounter() {
-        setHeartbeatCounterValue(heartbeatCounter.get());
+        App.getDbExecutor().execute(() -> {
+            setHeartbeatCounterValue(heartbeatCounter.get());
+            App.getInstance().getDatabase().cardDao().updateCard(this);
+        });
     }
 
     //========================= 日志管理方法 ==================
