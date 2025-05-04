@@ -8,7 +8,6 @@ import androidx.room.TypeConverters;
 import com.srun.campuslogin.data.dao.CardDao;
 import com.srun.campuslogin.data.model.AtomicIntegerConverter;
 import com.srun.campuslogin.data.model.CardEntity;
-import com.srun.campuslogin.data.model.Converters;
 import com.srun.campuslogin.data.model.DatabaseConverters;
 
 //=========================== 数据库核心类 =============================
@@ -26,11 +25,11 @@ import com.srun.campuslogin.data.model.DatabaseConverters;
  */
 @Database(
         entities = {CardEntity.class}, // 实体类列表
-        version = 2,                   // 数据库版本号
+        version = 3,                   // 更新数据库版本号（因字段变更）
         exportSchema = false           // 关闭数据库结构导出
 )
-// 类型转换器注册
-@TypeConverters({Converters.class, DatabaseConverters.class, AtomicIntegerConverter.class})
+// 注册所有类型转换器
+@TypeConverters({DatabaseConverters.class, AtomicIntegerConverter.class})
 public abstract class AppDatabase extends RoomDatabase {
 
     //=========================== DAO接口声明 =============================
@@ -54,10 +53,11 @@ public abstract class AppDatabase extends RoomDatabase {
                 // 第二次检查防止重复创建
                 if (INSTANCE == null) {
                     INSTANCE = Room.databaseBuilder(
-                            context.getApplicationContext(), // 使用应用级上下文
-                            AppDatabase.class,               // 数据库类
-                            "campus-login-db"               // 数据库名称
-                    ).build();
+                                    context.getApplicationContext(), // 使用应用级上下文
+                                    AppDatabase.class,               // 数据库类
+                                    "campus-login-db"               // 数据库名称
+                            ).fallbackToDestructiveMigration()     // 允许版本升级时清除旧数据（按需保留）
+                            .build();
                 }
             }
         }

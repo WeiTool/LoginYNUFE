@@ -9,12 +9,9 @@ import androidx.room.Entity;
 import androidx.room.Ignore;
 import androidx.room.PrimaryKey;
 import androidx.room.TypeConverters;
-
 import com.srun.campuslogin.core.App;
-
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -36,8 +33,8 @@ import java.util.concurrent.atomic.AtomicInteger;
  * - password    : 加密存储的登录密码
  * - lastIp      : 最近一次成功登录的 IP 地址
  * - isHeartbeatActive : 心跳检测是否激活
- * - logs        : 操作日志队列（最多保留 100 条）
- * - heartbeat_counter : 心跳检测计数器（数据库持久化字段）
+ * - logs        : 操作日志列表（最多保留 100 条）
+ * - heartbeatCounter : 心跳检测计数器（原子操作）
  * </p>
  */
 @Entity(tableName = "cards")
@@ -66,30 +63,20 @@ public class CardEntity implements Parcelable {
     private boolean isHeartbeatActive;
 
     @ColumnInfo(name = "logs")
-    @TypeConverters(DatabaseConverters.class)
-    private LinkedBlockingQueue<String> logs = new LinkedBlockingQueue<>(100);
+    @TypeConverters(DatabaseConverters.class) // 使用 DatabaseConverters 处理 List<String>
+    private List<String> logs = new ArrayList<>();
 
     @ColumnInfo(name = "heartbeat_counter")
-    private int heartbeatCounterValue;
-
-    //========================= 内存字段（不持久化到数据库）=================
-    @Ignore
-    private final AtomicInteger heartbeatCounter = new AtomicInteger(0);
+    @TypeConverters(AtomicIntegerConverter.class) // 使用 AtomicIntegerConverter
+    private AtomicInteger heartbeatCounter = new AtomicInteger(0);
 
     //========================= 构造方法 =========================
     /**
      * Room 框架要求的默认构造方法
-     * 初始化时同步数据库字段到内存计数器
      */
-    public CardEntity() {
-        heartbeatCounter.set(heartbeatCounterValue);
-    }
+    public CardEntity() {}
 
     //========================= Parcelable 实现 ==================
-    /**
-     * Parcel 反序列化构造方法
-     * @param in 包含序列化数据的 Parcel 对象
-     */
     protected CardEntity(Parcel in) {
         id = in.readInt();
         studentId = in.readString();
@@ -98,22 +85,15 @@ public class CardEntity implements Parcelable {
         password = in.readString();
         lastIp = in.readString();
         isHeartbeatActive = in.readByte() != 0;
-        heartbeatCounterValue = in.readInt(); // 读取持久化计数器值
+        heartbeatCounter.set(in.readInt());
 
         List<String> tempLogs = new ArrayList<>();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             in.readList(tempLogs, String.class.getClassLoader(), String.class);
         }
         logs.addAll(tempLogs);
-
-
-        // 初始化内存计数器
-        heartbeatCounter.set(heartbeatCounterValue);
     }
 
-    /**
-     * Parcelable 构造器，用于从 Parcel 中创建对象实例
-     */
     public static final Creator<CardEntity> CREATOR = new Creator<>() {
         @Override
         public CardEntity createFromParcel(Parcel in) {
@@ -126,17 +106,11 @@ public class CardEntity implements Parcelable {
         }
     };
 
-    //========================= Parcelable 方法 ==================
     @Override
     public int describeContents() {
         return 0;
     }
 
-    /**
-     * 将对象数据序列化到 Parcel 中
-     * @param dest  目标 Parcel 对象
-     * @param flags 序列化模式标志位
-     */
     @Override
     public void writeToParcel(@NonNull Parcel dest, int flags) {
         dest.writeInt(id);
@@ -146,141 +120,71 @@ public class CardEntity implements Parcelable {
         dest.writeString(password);
         dest.writeString(lastIp);
         dest.writeByte((byte) (isHeartbeatActive ? 1 : 0));
-        dest.writeInt(heartbeatCounterValue); // 写入持久化计数器值
-
-        // 转换为 ArrayList 避免 Stream.toList() 的 API 问题
-        dest.writeList(new ArrayList<>(logs));
+        dest.writeInt(heartbeatCounter.get());
+        dest.writeList(logs);
     }
 
     //========================= Getter/Setter 方法 ==================
-    public int getId() {
-        return id;
-    }
+    public int getId() { return id; }
+    public void setId(int id) { this.id = id; }
 
-    public void setId(int id) {
-        this.id = id;
-    }
+    public String getStudentId() { return studentId; }
+    public void setStudentId(String studentId) { this.studentId = studentId; }
 
-    public String getStudentId() {
-        return studentId;
-    }
+    public String getUsername() { return username; }
+    public void setUsername(String username) { this.username = username; }
 
-    public void setStudentId(String studentId) {
-        this.studentId = studentId;
-    }
+    public String getOperator() { return operator; }
+    public void setOperator(String operator) { this.operator = operator; }
 
-    public String getUsername() {
-        return username;
-    }
+    public String getPassword() { return password; }
+    public void setPassword(String password) { this.password = password; }
 
-    public void setUsername(String username) {
-        this.username = username;
-    }
+    public String getLastIp() { return lastIp; }
+    public void setLastIp(String lastIp) { this.lastIp = lastIp; }
 
-    public String getOperator() {
-        return operator;
-    }
+    public boolean isHeartbeatActive() { return isHeartbeatActive; }
+    public void setHeartbeatActive(boolean heartbeatActive) { isHeartbeatActive = heartbeatActive; }
 
-    public void setOperator(String operator) {
-        this.operator = operator;
-    }
+    public List<String> getLogs() { return new ArrayList<>(logs); }
+    public void setLogs(List<String> logs) { this.logs = new ArrayList<>(logs); }
 
-    public String getPassword() {
-        return password;
-    }
-
-    public void setPassword(String password) {
-        this.password = password;
-    }
-
-    public String getLastIp() {
-        return lastIp;
-    }
-
-    public void setLastIp(String lastIp) {
-        this.lastIp = lastIp;
-    }
-
-    public boolean isHeartbeatActive() {
-        return isHeartbeatActive;
-    }
-
-    public void setHeartbeatActive(boolean heartbeatActive) {
-        isHeartbeatActive = heartbeatActive;
-    }
-
-    //========================= 心跳计数器管理 ==================
-    /**
-     * 设置数据库中的心跳计数器值（Room 自动调用）
-     */
-    public void setHeartbeatCounterValue(int value) {
-        this.heartbeatCounterValue = value;
-        heartbeatCounter.set(value); // 同步到内存中的 AtomicInteger
-    }
-
-    /**
-     * 获取数据库中的心跳计数器值（Room 自动调用）
-     */
-    public int getHeartbeatCounterValue() {
-        return heartbeatCounterValue;
-    }
-
-    /**
-     * 获取内存中的原子计数器（用于线程安全操作）
-     */
-    public AtomicInteger getHeartbeatCounter() {
-        return heartbeatCounter;
-    }
-
-    /**
-     * 将内存中的计数器值同步到数据库字段
-     */
-    public void syncHeartbeatCounter() {
-        App.getDbExecutor().execute(() -> {
-            setHeartbeatCounterValue(heartbeatCounter.get());
-            App.getInstance().getDatabase().cardDao().updateCard(this);
-        });
-    }
+    public AtomicInteger getHeartbeatCounter() { return heartbeatCounter; }
+    @SuppressWarnings("unused")
+    public void setHeartbeatCounter(AtomicInteger value) { this.heartbeatCounter = value; }
 
     //========================= 日志管理方法 ==================
-    // 新增日志更新监听器接口
     public interface OnLogsUpdatedListener {
-        void onLogsUpdated(LinkedBlockingQueue<String> logs);
+        void onLogsUpdated(List<String> logs);
     }
+
     @Ignore
     private OnLogsUpdatedListener logsUpdatedListener;
 
-    // 设置监听器的方法
     public void setOnLogsUpdatedListener(OnLogsUpdatedListener listener) {
         this.logsUpdatedListener = listener;
     }
 
-    // 修改 addLog 方法以触发监听器
     public void addLog(String log) {
-        if (logs.remainingCapacity() == 0) {
-            logs.poll();
+        if (logs.size() >= 100) {
+            logs.remove(0); // 移除最旧的日志
         }
-        logs.offer(log);
-
-        // 触发日志更新回调
+        logs.add(log);
         if (logsUpdatedListener != null) {
-            logsUpdatedListener.onLogsUpdated(logs);
+            logsUpdatedListener.onLogsUpdated(new ArrayList<>(logs));
         }
     }
 
-    /**
-     * 清空所有操作日志
-     */
     public void clearLogs() {
         logs.clear();
     }
 
-    //========================= 其他方法 ==================
-    public LinkedBlockingQueue<String> getLogs() {
-        return new LinkedBlockingQueue<>(logs);
-    }
-
-    public void setLogs(LinkedBlockingQueue<String> logs) {
-        this.logs = logs;
+    //========================= 心跳计数器同步 ==================
+    public void syncHeartbeatCounter() {
+        App.getDbExecutor().execute(() -> {
+            // 直接调用 updateHeartbeatCounter，而非 updateCard
+            int value = heartbeatCounter.get();
+            App.getInstance().getDatabase().cardDao().updateHeartbeatCounter(id, value);
+        });
     }
 }

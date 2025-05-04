@@ -1,34 +1,34 @@
 package com.srun.campuslogin.data.model;
 
 import androidx.room.TypeConverter;
-import java.util.Arrays;
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
+import java.lang.reflect.Type;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.LinkedBlockingQueue;
 
+/**
+ * 数据库类型转换器：处理 List<String> 与 JSON 字符串的转换
+ * 核心功能：
+ * - 将日志列表序列化为 JSON 字符串以便存储
+ * - 从 JSON 字符串反序列化回日志列表
+ */
 public class DatabaseConverters {
-
+    private static final Type LIST_STRING_TYPE = new TypeToken<List<String>>() {}.getType();
+    @SuppressWarnings("unused")
     @TypeConverter
-    public static String queueToString(LinkedBlockingQueue<String> queue) {
-        if (queue == null || queue.isEmpty()) {
+    public static String listToString(List<String> list) {
+        if (list == null || list.isEmpty()) {
             return "";
         }
-        return String.join(",", queue);
+        return new Gson().toJson(list, LIST_STRING_TYPE);
     }
-
+    @SuppressWarnings("unused")
     @TypeConverter
-    public static LinkedBlockingQueue<String> stringToQueue(String data) {
-        LinkedBlockingQueue<String> queue = new LinkedBlockingQueue<>(100);
-        if (data != null && !data.isEmpty()) {
-            List<String> logs = Arrays.asList(data.split(","));
-            // 只保留最后 100 条日志
-            int startIndex = Math.max(0, logs.size() - 100);
-            for (int i = startIndex; i < logs.size(); i++) {
-                if (!queue.offer(logs.get(i))) {
-                    // 队列已满，停止添加
-                    break;
-                }
-            }
+    public static List<String> stringToList(String data) {
+        if (data == null || data.isEmpty()) {
+            return new ArrayList<>();
         }
-        return queue;
+        return new Gson().fromJson(data, LIST_STRING_TYPE);
     }
 }

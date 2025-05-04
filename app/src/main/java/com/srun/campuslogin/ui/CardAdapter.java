@@ -31,14 +31,12 @@ import com.srun.campuslogin.ui.fragments.EditCardDialogFragment;
 import com.srun.campuslogin.utils.DateUtils;
 import com.srun.campuslogin.utils.NetworkUtils;
 import java.lang.ref.WeakReference;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.LinkedBlockingQueue;
 import android.os.Looper;
 
 
@@ -302,7 +300,7 @@ public class CardAdapter extends ListAdapter<CardEntity, CardAdapter.ViewHolder>
                 newCard.setOperator(card.getOperator());
                 newCard.setPassword(card.getPassword());
                 newCard.setLogs(card.getLogs());
-                newCard.setHeartbeatCounterValue(card.getHeartbeatCounterValue());
+                newCard.getHeartbeatCounter().set(card.getHeartbeatCounter().get());
 
                 // 直接更新数据库
                 AppDatabase.getDatabase(contextRef.get()).cardDao().updateCard(newCard);
@@ -383,8 +381,7 @@ public class CardAdapter extends ListAdapter<CardEntity, CardAdapter.ViewHolder>
             card.addLog("🕒 开始周期检测 - " + DateUtils.getCurrentTime());
 
             // 在后台线程执行网络检测
-            new Thread(() -> {
-                // 使用 Java 原生网络检测
+            App.getDbExecutor().execute(() -> {
                 NetworkUtils.ReauthResult result = NetworkUtils.isReauthenticationRequired();
 
                 // 主线程更新 UI 和日志
@@ -429,7 +426,7 @@ public class CardAdapter extends ListAdapter<CardEntity, CardAdapter.ViewHolder>
                         Log.d("Heartbeat", "已调度下次检测，卡片ID：" + card.getId());
                     }
                 });
-            }).start();
+            });
         }
     }
 
@@ -747,7 +744,7 @@ public class CardAdapter extends ListAdapter<CardEntity, CardAdapter.ViewHolder>
     }
 
     // 辅助方法：更新日志文本
-    private void updateLogsText(TextView tvLogs, LinkedBlockingQueue<String> logs) {
-        tvLogs.setText(TextUtils.join("\n", new ArrayList<>(logs)));
+    private void updateLogsText(TextView tvLogs, List<String> logs) {
+        tvLogs.setText(TextUtils.join("\n", logs));
     }
 }

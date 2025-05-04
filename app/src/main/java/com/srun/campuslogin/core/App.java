@@ -79,6 +79,10 @@ public class App extends Application {
         return dbExecutor;
     }
 
+    public static ExecutorService getNetworkExecutor() {
+        return networkExecutor;
+    }
+
     //===========================数据库访问方法=============================
     public AppDatabase getDatabase() {
         return database;

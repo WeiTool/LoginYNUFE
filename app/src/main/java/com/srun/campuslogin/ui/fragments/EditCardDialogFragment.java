@@ -157,7 +157,7 @@ public class EditCardDialogFragment extends DialogFragment {
      * @throws IllegalArgumentException 如果参数不合法
      */
     private CardEntity buildCardEntity(String studentId, String operator, String password) {
-        // 参数校验
+        // 参数校验（保持不变）
         if (TextUtils.isEmpty(studentId)) {
             throw new IllegalArgumentException("学号不能为空");
         }
@@ -168,6 +168,11 @@ public class EditCardDialogFragment extends DialogFragment {
             throw new IllegalArgumentException("密码不能为空");
         }
 
+        return getCardEntity(studentId, operator, password);
+    }
+
+    @NonNull
+    private CardEntity getCardEntity(String studentId, String operator, String password) {
         CardEntity card = new CardEntity();
 
         // 如果存在当前卡片（例如编辑模式），继承部分字段
@@ -182,7 +187,6 @@ public class EditCardDialogFragment extends DialogFragment {
         card.setUsername(studentId);  // 根据需求决定是否独立设置username
         card.setOperator(operator);
         card.setPassword(password);
-
         return card;
     }
 

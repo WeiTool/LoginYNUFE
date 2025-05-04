@@ -4,7 +4,9 @@ public class LoginBridge {
 
     //=========================== 自定义回调接口 =============================
     public interface LoginCallback {
+        @SuppressWarnings("unused")
         void onSuccess();
+        @SuppressWarnings("unused")
         void onFailure(String error);
     }
 

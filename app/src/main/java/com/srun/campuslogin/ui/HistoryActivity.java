@@ -16,6 +16,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.srun.campuslogin.R;
 import com.srun.campuslogin.databinding.ActivityHistoryBinding;
 import com.srun.campuslogin.ui.fragments.EditCardDialogFragment;
+import com.srun.campuslogin.utils.VersionChecker;
 import com.srun.campuslogin.viewmodel.CardViewModel;
 import java.util.Collections;
 
@@ -53,6 +54,7 @@ public class HistoryActivity extends AppCompatActivity {
                 return insets;
             });
         }
+        new Thread(() -> VersionChecker.checkNewVersion(HistoryActivity.this)).start();
 
         //===========================核心组件初始化模块=============================
         // 先初始化 RecyclerView 和 Adapter
@@ -91,21 +93,22 @@ public class HistoryActivity extends AppCompatActivity {
             }
         });
 
-        viewModel.getAllCards().observe(this, cards -> {
-            adapter.submitList(cards, () -> {
-                // 强制刷新所有可见项
-                binding.rvHistory.post(() -> {
-                    RecyclerView.LayoutManager lm = binding.rvHistory.getLayoutManager();
-                    if (lm != null) {
-                        for (int i = 0; i < lm.getChildCount(); i++) {
-                            View view = lm.getChildAt(i);
-                            int pos = lm.getPosition(view);
-                            adapter.notifyItemChanged(pos);
-                        }
-                    }
-                });
-            });
-        });
+        viewModel.getAllCards().observe(this, cards ->
+                adapter.submitList(cards, () ->
+                        binding.rvHistory.post(() -> {
+                            RecyclerView.LayoutManager lm = binding.rvHistory.getLayoutManager();
+                            if (lm != null) {
+                                for (int i = 0; i < lm.getChildCount(); i++) {
+                                    View view = lm.getChildAt(i);
+                                    if (view != null) {
+                                        int pos = lm.getPosition(view);
+                                        adapter.notifyItemChanged(pos);
+                                    }
+                                }
+                            }
+                        })
+                )
+        );
     }
 
     //===========================列表视图初始化模块=============================
