@@ -1,8 +1,10 @@
 package com.srun.campuslogin.ui;
 
 import android.content.Context;
+import android.content.Intent;
 import android.content.res.ColorStateList;
 import android.content.res.Resources;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.text.TextUtils;
@@ -29,6 +31,7 @@ import com.srun.campuslogin.data.model.CardEntity;
 import com.srun.campuslogin.databinding.ItemCardBinding;
 import com.srun.campuslogin.ui.fragments.EditCardDialogFragment;
 import com.srun.campuslogin.utils.DateUtils;
+import com.srun.campuslogin.utils.HeartbeatService;
 import com.srun.campuslogin.utils.NetworkUtils;
 import java.lang.ref.WeakReference;
 import java.util.HashMap;
@@ -48,9 +51,11 @@ import android.os.Looper;
  */
 public class CardAdapter extends ListAdapter<CardEntity, CardAdapter.ViewHolder> {
     //===========================成员变量=============================
-    private final Map<Integer, Handler> heartbeatHandlers = new HashMap<>();
+    private final Map<Integer, HeartbeatTask> heartbeatTasks = new HashMap<>();
     private final Set<Integer> disabledPositions = new HashSet<>();
-    private final WeakReference<Context> contextRef; // 上下文弱引用，防止内存泄漏
+    private final WeakReference<Context> contextRef;
+    private int activeCardId = -1;
+    private static final Object HEARTBEAT_LOCK = new Object();
     private static final DiffUtil.ItemCallback<CardEntity> DIFF_CALLBACK = new DiffUtil.ItemCallback<>() {
         @Override
         public boolean areItemsTheSame(@NonNull CardEntity oldItem, @NonNull CardEntity newItem) {
@@ -90,7 +95,6 @@ public class CardAdapter extends ListAdapter<CardEntity, CardAdapter.ViewHolder>
         this.contextRef = new WeakReference<>(context);
     }
     public boolean isDestroyed() {
-        // 通过检查 Context 是否已被回收来判断适配器状态
         return contextRef.get() == null;
     }
 
@@ -115,10 +119,19 @@ public class CardAdapter extends ListAdapter<CardEntity, CardAdapter.ViewHolder>
             binding.btnHeartbeat.setOnClickListener(v -> {
                 int position = getBindingAdapterPosition();
                 if (position != RecyclerView.NO_POSITION) {
-                    // 获取当前适配器实例
                     RecyclerView.Adapter<?> adapter = getBindingAdapter();
                     if (adapter instanceof CardAdapter) {
                         CardEntity card = ((CardAdapter) adapter).getItem(position);
+
+                        // 新增点击拦截逻辑
+                        if (((CardAdapter) adapter).activeCardId != -1
+                                && ((CardAdapter) adapter).activeCardId != card.getId()) {
+                            Toast.makeText(v.getContext(),
+                                    "请关闭其他卡片的断线重连",
+                                    Toast.LENGTH_SHORT).show();
+                            return;
+                        }
+
                         ((CardAdapter) adapter).toggleHeartbeatState(card, position);
                     }
                 }
@@ -140,8 +153,7 @@ public class CardAdapter extends ListAdapter<CardEntity, CardAdapter.ViewHolder>
                 RecyclerView.Adapter<?> adapter = getBindingAdapter();
                 if (position != RecyclerView.NO_POSITION && adapter instanceof CardAdapter) {
                     CardEntity card = ((CardAdapter) adapter).getItem(position);
-                    // 正确传递 CardEntity 对象，而非 logs 队列
-                    ((CardAdapter) adapter).showLogsDialog(card); // 修复此处参数
+                    ((CardAdapter) adapter).showLogsDialog(card);
                 }
             });
 
@@ -201,59 +213,84 @@ public class CardAdapter extends ListAdapter<CardEntity, CardAdapter.ViewHolder>
     public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
         CardEntity card = getItem(position);
 
-        //------------------ 基础数据绑定（始终执行） -----------------
-        // 学生ID显示
+        //------------------ 基础数据绑定（原有代码） -----------------
         holder.binding.tvStudentId.setText(card.getStudentId() != null ? card.getStudentId() : "未知");
-
-        // 运营商显示（本地化处理）
         String operatorDisplayName = getOperatorDisplayName(card.getOperator());
         holder.binding.tvOperator.setText(operatorDisplayName != null ? operatorDisplayName : "未知运营商");
-
-        // IP地址动态显示（自动处理空值）
         updateIpDisplay(holder, card);
 
-        //------------------ UI状态更新（依赖实时数据） -----------------
-        // 登录按钮状态（禁用/启用）
+        //------------------ UI状态更新（原有代码） -----------------
         updateLoginButtonState(holder);
-
-        // 心跳按钮状态（颜色/文本）
-        holder.binding.btnHeartbeat.setText(
-                card.isHeartbeatActive() ? "停止检测" : "断线重连"
-        );
+        holder.binding.btnHeartbeat.setText(card.isHeartbeatActive() ? "停止检测" : "断线重连");
         holder.binding.btnHeartbeat.setBackgroundTintList(
                 ColorStateList.valueOf(ContextCompat.getColor(
                         holder.itemView.getContext(),
                         card.isHeartbeatActive() ? R.color.red : R.color.blue
                 ))
         );
+
+        //------------------ 新增互斥逻辑 -----------------
+        boolean isOtherActive = activeCardId != -1 && activeCardId != card.getId();
+        if (isOtherActive) {
+            // 禁用其他卡片按钮
+            holder.binding.btnHeartbeat.setEnabled(false);
+            holder.binding.btnHeartbeat.setBackgroundTintList(
+                    ColorStateList.valueOf(ContextCompat.getColor(
+                            holder.itemView.getContext(),
+                            R.color.gray
+                    ))
+            );
+        } else {
+            // 恢复当前卡片状态
+            holder.binding.btnHeartbeat.setEnabled(true);
+            holder.binding.btnHeartbeat.setBackgroundTintList(
+                    ColorStateList.valueOf(ContextCompat.getColor(
+                            holder.itemView.getContext(),
+                            card.isHeartbeatActive() ? R.color.red : R.color.blue
+                    ))
+            );
+        }
     }
 
-    // 新增Payload局部刷新逻辑
     @Override
     public void onBindViewHolder(@NonNull ViewHolder holder, int position, @NonNull List<Object> payloads) {
         if (payloads.isEmpty()) {
             super.onBindViewHolder(holder, position, payloads);
         } else {
+            CardEntity card = getItem(position);
             for (Object payload : payloads) {
                 if (payload instanceof Bundle) {
                     Bundle bundle = (Bundle) payload;
-                    // 处理 STUDENT_ID_CHANGED
+
                     if (bundle.containsKey("STUDENT_ID_CHANGED")) {
                         holder.binding.tvStudentId.setText(bundle.getString("STUDENT_ID_CHANGED"));
                     }
-                    // 处理 OPERATOR_CHANGED
+
                     if (bundle.containsKey("OPERATOR_CHANGED")) {
                         String operator = bundle.getString("OPERATOR_CHANGED");
                         holder.binding.tvOperator.setText(getOperatorDisplayName(operator));
                     }
-                    // 处理 IP_CHANGED
+
                     if (bundle.containsKey("IP_CHANGED")) {
                         holder.bindIp(bundle.getString("IP_CHANGED"));
                     }
-                    // 处理 HEARTBEAT_CHANGED
+
                     if (bundle.containsKey("HEARTBEAT_CHANGED")) {
                         boolean isActive = bundle.getBoolean("HEARTBEAT_CHANGED");
                         holder.bindHeartbeat(isActive);
+                    }
+
+                    boolean isOtherActive = activeCardId != -1 && activeCardId != card.getId();
+                    if (isOtherActive) {
+                        holder.binding.btnHeartbeat.setEnabled(false);
+                        holder.binding.btnHeartbeat.setBackgroundTintList(
+                                ColorStateList.valueOf(ContextCompat.getColor(
+                                        holder.itemView.getContext(),
+                                        R.color.gray
+                                ))
+                        );
+                    } else {
+                        holder.binding.btnHeartbeat.setEnabled(true);
                     }
                 }
             }
@@ -285,63 +322,110 @@ public class CardAdapter extends ListAdapter<CardEntity, CardAdapter.ViewHolder>
 
     //===========================心跳功能处理=============================
     private void toggleHeartbeatState(CardEntity card, int position) {
-        boolean newState = !card.isHeartbeatActive();
-        card.setHeartbeatActive(newState); // 直接修改当前列表对象状态
-
-        // 强制更新数据库（同步操作）
-        App.getDbExecutor().execute(() -> {
-            try {
-                // 创建新对象避免数据污染
-                CardEntity newCard = new CardEntity();
-                newCard.setId(card.getId());
-                newCard.setHeartbeatActive(newState);
-                newCard.setLastIp(card.getLastIp());
-                newCard.setStudentId(card.getStudentId());
-                newCard.setOperator(card.getOperator());
-                newCard.setPassword(card.getPassword());
-                newCard.setLogs(card.getLogs());
-                newCard.getHeartbeatCounter().set(card.getHeartbeatCounter().get());
-
-                // 直接更新数据库
-                AppDatabase.getDatabase(contextRef.get()).cardDao().updateCard(newCard);
-
-                // 主线程更新UI（关键修复：强制触发完整刷新）
-                new Handler(Looper.getMainLooper()).post(() -> {
-                    notifyItemChanged(position); // 移除手动Payload，强制完整刷新
-                });
-
-            } catch (Exception e) {
-                Log.e("Heartbeat", "数据库更新失败: " + e.getMessage());
-                new Handler(Looper.getMainLooper()).post(() ->
-                        showToast("状态更新失败")
-                );
+        synchronized (HEARTBEAT_LOCK) {
+            if (card.isHeartbeatActive()) {
+                activeCardId = -1;
+            } else {
+                if (activeCardId != -1 && activeCardId != card.getId()) {
+                    showToast("请关闭其他卡片的断线重连");
+                    return;
+                }
+                activeCardId = card.getId();
             }
-        });
 
-        // 日志和心跳控制
-        if (newState) {
-            card.addLog("开启断线重连 - " + DateUtils.getCurrentTime());
-            showToast("开启断线检测");
-            startHeartbeatCheck(card);
-        } else {
-            card.addLog("关闭断线重连 - " + DateUtils.getCurrentTime());
-            showToast("关闭断线重连");
-            stopHeartbeatCheck(card.getId());
+            boolean newState = !card.isHeartbeatActive();
+            card.setHeartbeatActive(newState);
+
+            App.getDbExecutor().execute(() -> {
+                try {
+                    CardEntity newCard = new CardEntity();
+                    newCard.setId(card.getId());
+                    newCard.setHeartbeatActive(newState);
+                    newCard.setLastIp(card.getLastIp());
+                    newCard.setStudentId(card.getStudentId());
+                    newCard.setOperator(card.getOperator());
+                    newCard.setPassword(card.getPassword());
+                    newCard.setLogs(card.getLogs());
+                    newCard.getHeartbeatCounter().set(card.getHeartbeatCounter().get());
+
+                    AppDatabase.getDatabase(contextRef.get()).cardDao().updateCard(newCard);
+
+                    new Handler(Looper.getMainLooper()).post(() -> notifyItemChanged(position));
+
+                } catch (Exception e) {
+                    Log.e("Heartbeat", "数据库更新失败: " + e.getMessage());
+                    new Handler(Looper.getMainLooper()).post(() ->
+                            showToast("状态更新失败")
+                    );
+                }
+            });
+
+            Context context = contextRef.get();
+            if (context == null) {
+                Log.e("Heartbeat", "上下文不可用");
+                return;
+            }
+
+            if (newState) {
+                card.addLog("开启断线重连 - " + DateUtils.getCurrentTime());
+                showToast("开启断线检测");
+                startHeartbeatCheck(card);
+
+                // 启动并绑定服务
+                Intent serviceIntent = new Intent(context, HeartbeatService.class);
+                try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        context.startForegroundService(serviceIntent);
+                    } else {
+                        context.startService(serviceIntent);
+                    }
+
+                    // 获取当前任务实例并绑定服务
+                    HeartbeatTask task = heartbeatTasks.get(card.getId());
+                    if (task != null) {
+                        HeartbeatService service = ((HeartbeatService) context.getApplicationContext());
+                        task.bindToService(service);
+                        service.updateNotification(task.getCardId());
+                    }
+                } catch (Exception e) {
+                    Log.e("Heartbeat", "服务启动失败: " + e.getMessage());
+                }
+
+            } else {
+                card.addLog("关闭断线重连 - " + DateUtils.getCurrentTime());
+                showToast("关闭断线重连");
+                stopHeartbeatCheck(card.getId());
+
+                Intent serviceIntent = new Intent(context, HeartbeatService.class);
+                try {
+                    context.stopService(serviceIntent);
+                } catch (Exception e) {
+                    Log.e("Heartbeat", "服务停止失败: " + e.getMessage());
+                }
+            }
+            notifyAllCardsStateChange();
         }
     }
 
     private void startHeartbeatCheck(CardEntity card) {
         Log.d("Heartbeat", "启动心跳检测，卡片ID：" + card.getId());
-        Handler handler = new Handler(Looper.getMainLooper());
-        // 清理旧 Handler
-        Handler oldHandler = heartbeatHandlers.get(card.getId());
-        if (oldHandler != null) {
-            oldHandler.removeCallbacksAndMessages(null);
+
+        // 清理旧任务
+        HeartbeatTask oldTask = heartbeatTasks.get(card.getId());
+        if (oldTask != null) {
+            oldTask.stop();
+            heartbeatTasks.remove(card.getId());
         }
-        // 启动新任务
-        Runnable task = new HeartbeatTask(this, card, handler);
+
+        // 创建新任务
+        Handler handler = new Handler(Looper.getMainLooper());
+        HeartbeatTask task = new HeartbeatTask(this, card, handler);
+
+        // 存储任务实例
+        heartbeatTasks.put(card.getId(), task);
+
+        // 启动任务
         handler.post(task);
-        heartbeatHandlers.put(card.getId(), handler);
     }
 
     public void startHeartbeatForActiveCards() {
@@ -352,87 +436,168 @@ public class CardAdapter extends ListAdapter<CardEntity, CardAdapter.ViewHolder>
         }
     }
 
-    public void stopAllHeartbeatChecks() {
-        for (Integer cardId : heartbeatHandlers.keySet()) {
-            stopHeartbeatCheck(cardId);
+    private void stopHeartbeatCheck(int cardId) {
+        synchronized (HEARTBEAT_LOCK) {
+            HeartbeatTask task = heartbeatTasks.get(cardId);
+            if (task != null) {
+                task.stop();
+                heartbeatTasks.remove(cardId);
+            }
         }
-        heartbeatHandlers.clear();
+    }
+
+    public void stopAllHeartbeatChecks() {
+        for (Integer cardId : heartbeatTasks.keySet()) {
+            HeartbeatTask task = heartbeatTasks.get(cardId);
+            if (task != null) {
+                task.stop();
+            }
+        }
+        heartbeatTasks.clear();
+    }
+
+    private void notifyAllCardsStateChange() {
+        for (int i = 0; i < getItemCount(); i++) {
+            notifyItemChanged(i);
+        }
     }
 
     // =========================== 新增静态心跳任务类 ===========================
-    private static class HeartbeatTask implements Runnable {
+    public static class HeartbeatTask implements Runnable {
         private final WeakReference<CardAdapter> adapterRef;
         private final WeakReference<CardEntity> cardRef;
-        private final Handler handler;
+        private final Handler associatedHandler;
+        private volatile boolean isStopped = false;
+
+        // 任务标识字段
+        private final int taskId;
+        private static int taskCounter = 0;
 
         HeartbeatTask(CardAdapter adapter, CardEntity card, Handler handler) {
             this.adapterRef = new WeakReference<>(adapter);
             this.cardRef = new WeakReference<>(card);
-            this.handler = handler;
+            this.associatedHandler = handler;
+            this.taskId = ++taskCounter;
+        }
+
+        // 服务绑定方法（实际调用处）
+        public void bindToService(HeartbeatService service) {
+            service.setCurrentTask(this);
+            Log.d("Heartbeat", "服务已绑定到卡片ID: " + getCardId());
+        }
+
+        // 获取卡片ID（实际调用处）
+        public int getCardId() {
+            CardEntity card = cardRef.get();
+            return card != null ? card.getId() : -1;
+        }
+
+        // 增强停止方法
+        public void stop() {
+            isStopped = true;
+            associatedHandler.removeCallbacks(this);
+
+            CardAdapter adapter = adapterRef.get();
+            if (adapter != null && adapter.activeCardId == getCardId()) {
+                adapter.activeCardId = -1;
+                adapter.notifyAllCardsStateChange();
+            }
+
+            Log.d("Heartbeat", "终止检测任务 ID: " + taskId);
+        }
+
+        // 运行状态检查（实际调用处）
+        public boolean isRunning() {
+            return !isStopped && adapterRef.get() != null && cardRef.get() != null;
         }
 
         @Override
         public void run() {
-            final CardAdapter adapter = adapterRef.get();
-            final CardEntity card = cardRef.get();
-            if (adapter == null || card == null) return;
+            synchronized (CardAdapter.HEARTBEAT_LOCK) {
+                if (isStopped) {
+                    Log.w("Heartbeat", "任务已终止，跳过执行");
+                    return;
+                }
 
-            // 记录检测开始
-            card.addLog("🕒 开始周期检测 - " + DateUtils.getCurrentTime());
+                final CardAdapter adapter = adapterRef.get();
+                final CardEntity card = cardRef.get();
+                if (adapter == null || card == null) {
+                    Log.w("Heartbeat", "适配器或卡片已回收");
+                    return;
+                }
 
-            // 在后台线程执行网络检测
-            App.getDbExecutor().execute(() -> {
-                NetworkUtils.ReauthResult result = NetworkUtils.isReauthenticationRequired();
+                // 记录检测开始（带任务ID）
+                card.addLog("🕒 开始周期检测 [任务#" + taskId + "] - " + DateUtils.getCurrentTime());
 
-                // 主线程更新 UI 和日志
-                new Handler(Looper.getMainLooper()).post(() -> {
-                    // 动态获取卡片位置
-                    int currentPosition = adapter.getCurrentList().indexOf(card);
-                    if (currentPosition == RecyclerView.NO_POSITION) {
-                        Log.w("Heartbeat", "卡片不存在于当前列表");
-                        return;
-                    }
+                // 在后台线程执行网络检测
+                App.getDbExecutor().execute(() -> {
+                    NetworkUtils.ReauthResult result = NetworkUtils.isReauthenticationRequired();
 
-                    // 更新检测计数
-                    int count = card.getHeartbeatCounter().incrementAndGet();
-                    card.syncHeartbeatCounter();
-                    card.addLog("🔄 第 " + count + " 次检测 - " + DateUtils.getCurrentTime());
-
-                    // 构建日志消息
-                    StringBuilder log = new StringBuilder();
-                    if (result.needReauth) {
-                        log.append("⚠️ 需要重新认证");
-                        if (result.error != null) {
-                            log.append(" - 错误原因: ").append(result.error);
+                    // 主线程更新 UI 和日志
+                    new Handler(Looper.getMainLooper()).post(() -> {
+                        // 二次校验任务状态
+                        if (isStopped || adapter.isDestroyed()) {
+                            Log.w("Heartbeat", "任务已终止，跳过更新");
+                            return;
                         }
-                    } else {
-                        log.append("✅ 网络正常，无需自动登录");
-                    }
-                    log.append(" - ").append(DateUtils.getCurrentTime());
-                    card.addLog(log.toString());
 
-                    // 更新数据库和 UI
-                    adapter.executeDatabaseUpdate(card);
-                    adapter.notifyItemChanged(currentPosition);
+                        // 动态获取卡片位置
+                        int currentPosition = adapter.getCurrentList().indexOf(card);
+                        if (currentPosition == RecyclerView.NO_POSITION) {
+                            Log.w("Heartbeat", "卡片不存在于当前列表");
+                            return;
+                        }
 
-                    // 触发重新认证
-                    if (result.needReauth) {
-                        adapter.autoRelogin(card, currentPosition);
-                    }
+                        // 更新检测计数
+                        int count = card.getHeartbeatCounter().incrementAndGet();
+                        card.syncHeartbeatCounter();
+                        card.addLog("🔄 第 " + count + " 次检测 [任务#" + taskId + "] - " + DateUtils.getCurrentTime());
 
-                    // 调度下次检测（无论成功与否）
-                    if (!adapter.isDestroyed()) {
-                        handler.postDelayed(this, 60_000);
-                        Log.d("Heartbeat", "已调度下次检测，卡片ID：" + card.getId());
-                    }
+                        StringBuilder log = getStringBuilder(result);
+                        card.addLog(log.toString());
+
+                        // 更新数据库和 UI
+                        adapter.executeDatabaseUpdate(card);
+                        adapter.notifyItemChanged(currentPosition, "HEARTBEAT_CHANGED");
+
+                        // 触发重新认证
+                        if (result.needReauth) {
+                            adapter.autoRelogin(card, currentPosition);
+                        }
+
+                        // 智能调度下次检测（正确位置）
+                        if (!isStopped && !adapter.isDestroyed()) {
+                            long interval = result.needReauth ? 30_000 : 60_000;
+                            associatedHandler.postDelayed(this, interval);
+                            Log.d("Heartbeat", String.format(
+                                    "已调度下次检测，卡片ID：%d 间隔：%ds",
+                                    card.getId(),
+                                    interval / 1000
+                            ));
+                        }
+                    });
                 });
-            });
+            }
+        }
+
+        @NonNull
+        private StringBuilder getStringBuilder(NetworkUtils.ReauthResult result) {
+            StringBuilder log = new StringBuilder();
+            if (result.needReauth) {
+                log.append("⚠️ 需要重新认证");
+                if (result.error != null) {
+                    log.append(" - 错误原因: ").append(result.error);
+                }
+            } else {
+                log.append("✅ 网络正常，无需自动登录");
+            }
+            log.append(" [任务#").append(taskId).append("] - ").append(DateUtils.getCurrentTime());
+            return log;
         }
     }
 
     //===========================辅助方法模块=============================
     private boolean validateCardInfo(CardEntity card) {
-        // 检查所有关键字段是否为 null 或空字符串
         if (TextUtils.isEmpty(card.getUsername()) ||
                 TextUtils.isEmpty(card.getOperator()) ||
                 TextUtils.isEmpty(card.getPassword())) {
@@ -440,7 +605,6 @@ public class CardAdapter extends ListAdapter<CardEntity, CardAdapter.ViewHolder>
             return false;
         }
 
-        // 检查学号是否为纯数字（可选）
         if (!card.getUsername().matches("\\d+")) {
             showToast("学号必须为纯数字");
             return false;
@@ -604,14 +768,6 @@ public class CardAdapter extends ListAdapter<CardEntity, CardAdapter.ViewHolder>
         }
     }
 
-    private void stopHeartbeatCheck(int cardId) {
-        Handler handler = heartbeatHandlers.get(cardId);
-        if (handler != null) {
-            handler.removeCallbacksAndMessages(null);
-            heartbeatHandlers.remove(cardId);
-        }
-    }
-
     private void showToast(String msg) {
         Context context = contextRef.get();
         if (context instanceof AppCompatActivity) {
@@ -705,15 +861,13 @@ public class CardAdapter extends ListAdapter<CardEntity, CardAdapter.ViewHolder>
     //===========================IP显示模块=============================
     private void updateCardIp(int position, String newIp) {
         CardEntity card = getCurrentList().get(position);
-        card.setLastIp(TextUtils.isEmpty(newIp) ? "未获取" : newIp); // 使用 setLastIp()
+        card.setLastIp(TextUtils.isEmpty(newIp) ? "未获取" : newIp);
         notifyItemChanged(position);
     }
 
     private void updateIpDisplay(ViewHolder holder, CardEntity card) {
-        // 从 WeakReference 中获取 Context
         Context context = contextRef.get();
         if (context == null) {
-            // 上下文不可用时提前返回
             return;
         }
 
@@ -722,7 +876,7 @@ public class CardAdapter extends ListAdapter<CardEntity, CardAdapter.ViewHolder>
                 context.getString(R.string.ip_unavailable) :
                 card.getLastIp();
 
-        // 格式化显示文本（例如 "IP: 192.168.1.1"）
+        // 格式化显示文本
         holder.binding.tvIp.setText(
                 context.getString(R.string.ip_address, ipContent)
         );
@@ -743,7 +897,6 @@ public class CardAdapter extends ListAdapter<CardEntity, CardAdapter.ViewHolder>
         }
     }
 
-    // 辅助方法：更新日志文本
     private void updateLogsText(TextView tvLogs, List<String> logs) {
         tvLogs.setText(TextUtils.join("\n", logs));
     }

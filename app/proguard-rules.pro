@@ -6,6 +6,7 @@
 
 # ===================== 保留数据模型类（GSON 反序列化） =====================
 -keepclassmembers class com.srun.campuslogin.data.model.** {
+!transient <fields>;
     <fields>;
     <methods>;
 }
@@ -88,7 +89,14 @@
 -keep class org.apache.log4j.** { *; }
 
 # 保留自定义回调接口（防止 JNI 回调失效）
+-keep class com.srun.campuslogin.core.LoginBridge {
+    native <methods>;
+}
 -keep class com.srun.campuslogin.core.LoginBridge$LoginCallback { *; }
+
+-keep class * implements com.srun.campuslogin.core.LoginBridge$LoginCallback {
+    *;
+}
 
 # ===================== 通用防崩溃规则 =====================
 # 保留所有 Activity/Fragment 的子类（反射可能用到）
@@ -100,4 +108,8 @@
     public <init>(android.content.Context);
     public <init>(android.content.Context, android.util.AttributeSet);
     public <init>(android.content.Context, android.util.AttributeSet, int);
+}
+
+-keepclassmembers class **.R$* {
+    public static <fields>;
 }
