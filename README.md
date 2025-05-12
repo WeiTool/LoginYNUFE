@@ -1,4 +1,4 @@
-# 校园网登录客户端APP
+# 校园网登录客户端APP（因为难以维护rust与Java，这个项目无限期停止）
 
 📱 基于 [zu1k/srun](https://github.com/zu1k/srun) 的校园网多账号管理APP | Android平台 | 智能心跳保活
 
